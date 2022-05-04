@@ -1,0 +1,84 @@
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.11;
+
+contract Purchase {
+    uint public value; 
+    uint public confirmTime;
+    address payable public seller; 
+    address payable public buyer; 
+    address public ownership = msg.sender; 
+
+    enum State { Created, Locked, Release, Inactive } 
+    State public state;
+
+    constructor() payable {
+        seller = payable(msg.sender); 
+        value = msg.value / 2; 
+    }
+
+    modifier inState(State state_) {
+        if (state != state_) 
+            revert ("The function cannot be called at the current state.");
+        _;
+    }
+
+    modifier onlyBuyer() {
+        if (msg.sender != buyer) 
+            revert ("Only the buyer can call this function.");
+        _;
+    }
+
+    modifier onlySeller() {
+        if (msg.sender != seller) 
+            revert ("Only the seller can call this function.");  
+        _;
+    }
+
+    modifier onlyTimeUp() {
+        if (block.timestamp < (confirmTime + 10 seconds)) 
+            revert ("Time is not over.");
+        _;
+    }
+
+    function confirmPurchase() external inState(State.Created) payable {
+        require(msg.value == (2 * value), "Please send the correct purchase amount.");
+        buyer = payable(msg.sender);
+        ownership = msg.sender;
+        state = State.Locked;
+        confirmTime = block.timestamp;
+    }
+
+    function confirmOwnership() external onlyBuyer inState(State.Locked) {
+        state = State.Release;
+        buyer.transfer(value);
+    } 
+
+    function paySeller() public onlyBuyer inState(State.Release) {
+        state = State.Inactive;
+        seller.transfer(3 * value);
+    }
+
+    function abort() external onlySeller inState(State.Created) {
+        state = State.Inactive;
+        seller.transfer(address(this).balance);
+    }
+
+    function currentTime() external view returns(uint) { 
+        return block.timestamp;
+    }
+
+    function leftTime() external view returns(uint) {
+        return (confirmTime + 10 seconds - block.timestamp);
+    }
+
+    function endContract() external onlyTimeUp onlySeller {
+        state = State.Release;
+        if (block.timestamp >= (confirmTime + 10 seconds))
+        {
+            state = State.Inactive;
+            seller.transfer(3 * value);
+            buyer.transfer(value);
+        }
+    }   
+} 
