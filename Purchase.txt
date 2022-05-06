@@ -36,7 +36,7 @@ contract Purchase {
     }
 
     modifier onlyTimeUp() {
-        if (block.timestamp < (confirmTime + 10 seconds)) 
+        if (block.timestamp < (confirmTime + 30 seconds)) 
             revert ("Time is not over.");
         _;
     }
@@ -69,12 +69,12 @@ contract Purchase {
     }
 
     function leftTime() private view returns(uint) {
-        return (confirmTime + 10 seconds - block.timestamp);
+        return (confirmTime + 30 seconds - block.timestamp);
     }
 
     function endContract() external onlyTimeUp onlySeller {
         state = State.Release;
-        if (block.timestamp >= (confirmTime + 10 seconds))
+        if (block.timestamp >= (confirmTime + 30 seconds))
         {
             state = State.Inactive;
             seller.transfer(3 * value);
