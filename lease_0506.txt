@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.11;
+
+contract lease_contract {
+        uint k;
+        uint i;
+        uint t_now;
+        uint start0;
+        uint public recent;
+        uint public time_now;
+        uint public start; //將開始時間與結束時間記錄下來
+        uint public end; 
+        uint private V_value = 1 ether; //租金(1小時0.1Ether)
+        uint private T_time = 5 minutes; //設定出租時間
+        //uint private recent =2 * V_value;
+        
+        bool enable=false; //歸還狀態
+        bool public use_right=false; //use_right使用權 false為不可使用 true為可以使用
+        bool public re_state=true; //歸還狀態
+        address payable public lesser; //lesser出租者
+        address payable public lessee; //lessee承租者
+        //先付n個時間單位的押金+租金
+
+        //event Time_recent(uint time); //設定出租時長 1min
+        //event Value_recent(uint value); //設定租金價格(2 Ether/min)
+        enum State { 
+            Created,  //創建租約-出租人
+            Locked,   //出租人將款項放入合約中
+            Paid_Using,    //確認使用權是否開通，確認及付款(租金)，即開始使用
+            //Use_end, //使用權關閉歸還，若在時間內歸還則退還押金，若超過時間則依規定扣除押金，並自動將使用權關閉無法使用
+            Release, //使用時間結束，退還押金或是將押金給出租人
+            Inactive //合約結束
+        } 
+        State public state;
+        //payable 有資金轉移的修飾詞
+        constructor() payable {
+            lesser = payable(msg.sender); 
+            //value = msg.value / 2; 
+        }
+        //
+        modifier inState(State state_) {
+            if (state != state_) 
+                revert ("The function cannot be called at the current state.");
+            _;
+        }
+        modifier inStates(State state1, State state2, State state3) {
+            if ((state != state1) || (state != state2) || (state != state3)) 
+                revert ("The function cannot be called at the current states.");
+            _;
+        }
+        modifier onlylessee() {
+            if (msg.sender != lessee) 
+                revert ("Only the buyer can call this function.");
+            _;
+        }
+
+        modifier onlylesser() {
+            if (msg.sender != lesser) 
+                revert ("Only the seller can call this function.");  
+            _;
+        }
+        
+       /* function setlease(uint _time,uint _value) external onlylesser inState(State.Created){
+            emit Time_recent(_time);
+            emit Value_recent(_value);
+            T_time=1; // _time;
+            V_value=2 ether; // _value;
+        }*/
+        
+        //承租人確認是否租約
+        function confirmlease() external inState(State.Created) payable {
+            require(msg.value == (7 * V_value), "Please send the correct lease amount.");
+            lessee = payable(msg.sender); 
+            use_right = true; //開啟使用權
+            state = State.Locked;
+            start0 = block.timestamp;//確認開始時間
+            
+        }
+        //確認使用權是否開啟，並付費開始使用
+        function confirmuseright() external onlylessee inState(State.Locked) {
+            start = block.timestamp;//確認開始時間
+            end = start + T_time;
+            //確認使用權超過3分鐘未確認
+            if (start >= start0 + 3 minutes){
+                use_right = true; //停止使用
+                state=State.Inactive; //終止合約
+                lesser.transfer(2 * V_value); //賠償押金
+                lessee.transfer(5 * V_value); //歸還租金
+            }
+            else{
+                state = State.Paid_Using;
+                lesser.transfer(5 * V_value);
+                re_state = false;
+            }
+            
+        } 
+        //歸還使用權，並結束
+        function return_right() external onlylessee inState(State.Paid_Using){
+            use_right =false;
+            re_state = true;
+            state = State.Release; 
+        }
+        function checktime_now() internal returns(uint,bool) {
+            while(enable == false && re_state == false){
+                t_now=block.timestamp;
+                //尚未歸還，判斷時間是否超時，true表未超時
+                if(t_now <= end){
+                    if (use_right == false){
+                        //表示已歸還，要準備退回押金
+                        state=State.Release;
+                        enable=true;
+                        return (t_now,enable);
+                    }
+                    return (t_now,enable);
+                }
+                else{
+                    //超過時間
+                    if (use_right == false){
+                        if(t_now<= end + 1 minutes){
+                            k=1;
+                            recent=k*V_value;
+                            enable=true;
+                            state=State.Release;
+                            return (t_now,enable);
+                        }
+                        else if(t_now<= end +2 minutes){
+                            k=2;
+                            recent=k*V_value;
+                            state=State.Release;
+                            enable=true;
+                        }
+                        return (t_now,enable);
+                    }
+                    else{
+                        //state = State.Use_end;
+                        if(t_now >= end +2 minutes){
+                            k=2;
+                            state=State.Release;
+                            recent=k*V_value;
+                            enable=true; 
+                            use_right=false; //強制關閉
+                        }
+                        return (t_now,enable);
+                    }
+                }          
+            }
+            return (t_now,enable);
+        }
+        function showtime() public{
+            (time_now,re_state)=checktime_now();
+        }
+        function payback() public inState(State.Release){
+            state=State.Inactive;
+            lesser.transfer(recent);
+            lessee.transfer( 2 * V_value - recent);
+        }
+        function abort() external onlylesser inState(State.Created) {
+            state = State.Inactive;
+            lesser.transfer(address(this).balance);
+        }
+       
+    }
